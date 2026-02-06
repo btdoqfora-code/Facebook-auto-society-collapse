@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Collapse/AI Doom Facebook Automation Bot
-Multi-source aggregation: Reddit (OAuth) + News RSS + YouTube (Data API v3) + Original AI posts
+Multi-source aggregation: News RSS + YouTube (Data API v3) + Original AI posts
 """
 
 import os
@@ -9,7 +9,6 @@ import random
 import re
 import requests
 import feedparser
-import praw
 import google.generativeai as genai
 from googleapiclient.discovery import build
 from datetime import datetime
@@ -22,11 +21,6 @@ load_dotenv()
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# Reddit OAuth credentials
-REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID")
-REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET")
-REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "collapse-bot/1.0")
 
 # Configure Gemini
 genai.configure(api_key=GEMINI_API_KEY)
@@ -41,16 +35,7 @@ YOUTUBE_CHANNELS = {
     "David Shapiro": "UUvKRFNawVcuz4b9ihUTApCg",  # AI automation, post-labor
 }
 
-# Reddit Subreddits (doom-focused)
-REDDIT_SUBREDDITS = [
-    "collapse",
-    "lostgeneration",
-    "antiwork",
-    "ABoringDystopia",
-    "Futurology",
-]
-
-# News RSS Feeds (expanded since Reddit is unavailable)
+# News RSS Feeds
 NEWS_FEEDS = {
     # Economic Doom
     "ZeroHedge": "https://www.zerohedge.com/fullrss2.xml",
@@ -73,76 +58,11 @@ NEWS_FEEDS = {
 
 # Content mix probabilities (must sum to 1.0)
 CONTENT_MIX = {
-    "reddit": 0.25,      # 25% Reddit posts (OAuth authenticated)
-    "news": 0.40,        # 40% News articles (very reliable)
-    "youtube": 0.15,     # 15% YouTube videos (Data API v3 - reliable!)
+    "news": 0.60,        # 60% News articles (very reliable)
+    "youtube": 0.20,     # 20% YouTube videos (Data API v3 - reliable!)
     "original": 0.20,    # 20% Original AI posts (always works)
 }
 
-
-def get_reddit_posts():
-    """Fetch top posts from collapse-related subreddits using OAuth"""
-    try:
-        # Initialize Reddit with OAuth
-        reddit = praw.Reddit(
-            client_id=REDDIT_CLIENT_ID,
-            client_secret=REDDIT_CLIENT_SECRET,
-            user_agent=REDDIT_USER_AGENT
-        )
-        
-        all_posts = []
-        
-        for subreddit_name in REDDIT_SUBREDDITS:
-            try:
-                subreddit = reddit.subreddit(subreddit_name)
-                
-                # Get top posts from the last week
-                submissions = list(subreddit.top(time_filter='week', limit=25))
-                
-                # Handle empty list (rate limiting or no posts)
-                if not submissions:
-                    print(f"  ⚠️  r/{subreddit_name} returned empty list (possible rate limit)")
-                    continue
-                
-                for submission in submissions:
-                    # Filter out stickied posts
-                    if submission.stickied:
-                        continue
-                    
-                    # Only include posts with decent engagement (lower threshold than before)
-                    if submission.score < 25:
-                        continue
-                    
-                    all_posts.append({
-                        "subreddit": subreddit_name,
-                        "title": submission.title,
-                        "url": f"https://reddit.com{submission.permalink}",
-                        "score": submission.score,
-                        "selftext": submission.selftext[:500] if submission.selftext else "",
-                    })
-                
-                fetched_count = len([p for p in all_posts if p['subreddit'] == subreddit_name])
-                if fetched_count > 0:
-                    print(f"  ✓ Fetched {fetched_count} posts from r/{subreddit_name}")
-                else:
-                    print(f"  ⚠️  r/{subreddit_name}: No posts met criteria (25+ upvotes)")
-            
-            except Exception as e:
-                print(f"  ✗ Error fetching r/{subreddit_name}: {e}")
-                continue
-        
-        print(f"\nTotal Reddit posts found: {len(all_posts)}")
-        
-        if not all_posts:
-            print("  → Try again later if rate limited")
-            return None
-        
-        # Return a random high-scoring post
-        return random.choice(sorted(all_posts, key=lambda x: x["score"], reverse=True)[:20])
-    
-    except Exception as e:
-        print(f"Reddit OAuth error: {e}")
-        return None
 
 
 def get_news_articles():
@@ -277,43 +197,6 @@ def get_youtube_videos():
         print("  → Make sure YouTube Data API v3 is enabled in Google Cloud Console")
         return None
 
-
-def generate_reddit_post(reddit_data):
-    """Use Gemini to create commentary about a Reddit post"""
-    model = genai.GenerativeModel(
-        model_name="gemini-3-flash-preview",
-        system_instruction="""You are a social media manager for a collapse/AI doom awareness page.
-        Your audience is interested in economic collapse, AI takeover, and US decline.
-        
-        Generate engaging Facebook posts about Reddit discussions. The post should:
-        - Be 2-4 sentences of commentary
-        - Highlight why the Reddit discussion is important/alarming
-        - Use a direct, serious tone (not sensational or clickbaity)
-        - NOT include the Reddit link (that will be added separately)
-        - NOT use emojis
-        - NOT start with preambles like "Here's a post" or "Check out"
-        - Reference the subreddit naturally (e.g., "r/collapse is discussing...")
-        
-        Example good post:
-        "r/collapse found data showing 40% of recent college grads are working jobs that don't require a degree. The credential inflation trap is real, and we're sacrificing an entire generation to it."
-        """
-    )
-    
-    prompt = f"""Create a Facebook post about this Reddit discussion:
-
-Subreddit: r/{reddit_data['subreddit']}
-Title: {reddit_data['title']}
-Upvotes: {reddit_data['score']}
-
-Write ONLY the post text, nothing else."""
-    
-    response = model.generate_content(prompt)
-    post_text = clean_ai_response(response.text)
-    
-    # Add the Reddit link at the end
-    full_post = f"{post_text}\n\n{reddit_data['url']}"
-    
-    return full_post
 
 
 def generate_news_post(article):
@@ -477,21 +360,13 @@ def main():
             content_type = ctype
             break
     
+    print(f"\n🎲 Random selection: {rand:.3f} → Content type: {content_type}")
+    print(f"   Mix: News {CONTENT_MIX['news']*100:.0f}% | YouTube {CONTENT_MIX['youtube']*100:.0f}% | Original {CONTENT_MIX['original']*100:.0f}%")
+    
     post_content = None
     
     # Generate content based on selected type
-    if content_type == "reddit":
-        print("\n🔴 Generating REDDIT POST (OAuth)...")
-        reddit_data = get_reddit_posts()
-        
-        if reddit_data:
-            print(f"Selected post: r/{reddit_data['subreddit']} - '{reddit_data['title']}' ({reddit_data['score']} upvotes)")
-            post_content = generate_reddit_post(reddit_data)
-        else:
-            print("⚠️ No Reddit posts found, falling back to original post")
-            content_type = "original"
-    
-    elif content_type == "news":
+    if content_type == "news":
         print("\n📰 Generating NEWS POST...")
         article = get_news_articles()
         
