@@ -200,7 +200,7 @@ def get_youtube_videos():
 def generate_reddit_post(reddit_data):
     """Use Gemini to create commentary about a Reddit post"""
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash-exp",
+        model_name="gemini-3-flash-preview",
         system_instruction="""You are a social media manager for a collapse/AI doom awareness page.
         Your audience is interested in economic collapse, AI takeover, and US decline.
         
@@ -238,7 +238,7 @@ Write ONLY the post text, nothing else."""
 def generate_news_post(article):
     """Use Gemini to create commentary about a news article"""
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash-exp",
+        model_name="gemini-3-flash-preview",
         system_instruction="""You are a social media manager for a collapse/AI doom awareness page.
         Your audience is interested in economic collapse, AI takeover, and US decline.
         
@@ -275,7 +275,7 @@ Write ONLY the post text, nothing else."""
 def generate_video_post(video):
     """Use Gemini to create commentary about a doom YouTube video"""
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash-exp",
+        model_name="gemini-3-flash-preview",
         system_instruction="""You are a social media manager for a collapse/AI doom awareness page. 
         Your audience is interested in economic collapse, AI takeover, and US decline.
         
@@ -311,7 +311,7 @@ Write ONLY the post text, nothing else."""
 def generate_original_post():
     """Use Gemini to create original doom content"""
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash-exp",
+        model_name="gemini-3-flash-preview",
         system_instruction="""You are a social media manager for a collapse/AI doom awareness page.
         Your audience is interested in economic collapse, AI displacement, societal decay, and US decline.
         
