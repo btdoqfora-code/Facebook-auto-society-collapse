@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Collapse/AI Doom Facebook Automation Bot
-Multi-source aggregation: Reddit + News RSS + YouTube + Original AI posts
+Multi-source aggregation: Reddit (OAuth) + News RSS + YouTube (Data API v3) + Original AI posts
 """
 
 import os
@@ -9,7 +9,9 @@ import random
 import re
 import requests
 import feedparser
+import praw
 import google.generativeai as genai
+from googleapiclient.discovery import build
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -21,16 +23,22 @@ FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+# Reddit OAuth credentials
+REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID")
+REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET")
+REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "collapse-bot/1.0")
+
 # Configure Gemini
 genai.configure(api_key=GEMINI_API_KEY)
 
-# YouTube Channel RSS Feeds
+# YouTube Channel IDs (using UU prefix for uploads playlist)
+# Note: Convert UC (channel) to UU (uploads) to get latest videos
 YOUTUBE_CHANNELS = {
-    "Michael Bordenaro": "https://www.youtube.com/feeds/videos.xml?channel_id=UCdxGqN9_aBisOJHzIRTGLfg",
-    "Peter Schiff": "https://www.youtube.com/feeds/videos.xml?channel_id=UCIjuLiLHdFxYtFmWlbTGQRQ",
-    "Economics Explained": "https://www.youtube.com/feeds/videos.xml?channel_id=UCZ4AMrDcNrfy3X6nsU8-rPg",
-    "Robert Miles AI Safety": "https://www.youtube.com/feeds/videos.xml?channel_id=UCLB7AzTwc6VFZrBsO2ucBMg",
-    "David Shapiro": "https://www.youtube.com/feeds/videos.xml?channel_id=UCvKRFNawVcuz4b9ihUTApCg",
+    "Michael Bordenaro": "UUdxGqN9_aBisOJHzIRTGLfg",  # Economic collapse, housing
+    "Peter Schiff": "UUIjuLiLHdFxYtFmWlbTGQRQ",  # Economic doom, dollar collapse
+    "Economics Explained": "UUZ4AMrDcNrfy3X6nsU8-rPg",  # Economic analysis
+    "Robert Miles AI Safety": "UULB7AzTwc6VFZrBsO2ucBMg",  # AI safety, existential risk
+    "David Shapiro": "UUvKRFNawVcuz4b9ihUTApCg",  # AI automation, post-labor
 }
 
 # Reddit Subreddits (doom-focused)
@@ -42,67 +50,99 @@ REDDIT_SUBREDDITS = [
     "Futurology",
 ]
 
-# News RSS Feeds
+# News RSS Feeds (expanded since Reddit is unavailable)
 NEWS_FEEDS = {
+    # Economic Doom
     "ZeroHedge": "https://www.zerohedge.com/fullrss2.xml",
     "Wolf Street": "https://wolfstreet.com/feed/",
+    
+    # Tech/AI
     "TechCrunch": "https://techcrunch.com/feed/",
     "Ars Technica": "https://feeds.arstechnica.com/arstechnica/index",
+    "The Verge": "https://www.theverge.com/rss/index.xml",
+    "Wired": "https://www.wired.com/feed/rss",
+    
+    # Business/Economics
+    "Business Insider": "https://www.businessinsider.com/rss",
+    "MarketWatch": "https://www.marketwatch.com/rss/topstories",
+    
+    # General News
+    "Reuters Business": "https://www.reutersagency.com/feed/?taxonomy=best-topics&post_type=best",
+    "BBC Business": "http://feeds.bbci.co.uk/news/business/rss.xml",
 }
 
 # Content mix probabilities (must sum to 1.0)
 CONTENT_MIX = {
-    "reddit": 0.30,      # 30% Reddit posts
-    "news": 0.30,        # 30% News articles
-    "youtube": 0.20,     # 20% YouTube videos
-    "original": 0.20,    # 20% Original AI posts
+    "reddit": 0.25,      # 25% Reddit posts (OAuth authenticated)
+    "news": 0.40,        # 40% News articles (very reliable)
+    "youtube": 0.15,     # 15% YouTube videos (Data API v3 - reliable!)
+    "original": 0.20,    # 20% Original AI posts (always works)
 }
 
 
 def get_reddit_posts():
-    """Fetch top posts from collapse-related subreddits"""
-    all_posts = []
-    
-    for subreddit in REDDIT_SUBREDDITS:
-        try:
-            # Reddit JSON feed (top posts from last 24 hours)
-            url = f"https://www.reddit.com/r/{subreddit}/top.json?t=day&limit=10"
-            headers = {"User-Agent": "Mozilla/5.0 (collapse-bot/1.0)"}
-            
-            response = requests.get(url, headers=headers, timeout=10)
-            if response.status_code != 200:
-                continue
-            
-            data = response.json()
-            
-            for post in data.get("data", {}).get("children", []):
-                post_data = post.get("data", {})
-                
-                # Filter out stickied posts, deleted, removed
-                if post_data.get("stickied") or post_data.get("removed"):
-                    continue
-                
-                # Only include posts with decent engagement
-                if post_data.get("score", 0) < 50:
-                    continue
-                
-                all_posts.append({
-                    "subreddit": subreddit,
-                    "title": post_data.get("title", ""),
-                    "url": f"https://reddit.com{post_data.get('permalink', '')}",
-                    "score": post_data.get("score", 0),
-                    "selftext": post_data.get("selftext", "")[:500],  # First 500 chars
-                })
+    """Fetch top posts from collapse-related subreddits using OAuth"""
+    try:
+        # Initialize Reddit with OAuth
+        reddit = praw.Reddit(
+            client_id=REDDIT_CLIENT_ID,
+            client_secret=REDDIT_CLIENT_SECRET,
+            user_agent=REDDIT_USER_AGENT
+        )
         
-        except Exception as e:
-            print(f"Error fetching r/{subreddit}: {e}")
-            continue
+        all_posts = []
+        
+        for subreddit_name in REDDIT_SUBREDDITS:
+            try:
+                subreddit = reddit.subreddit(subreddit_name)
+                
+                # Get top posts from the last week
+                submissions = list(subreddit.top(time_filter='week', limit=25))
+                
+                # Handle empty list (rate limiting or no posts)
+                if not submissions:
+                    print(f"  ⚠️  r/{subreddit_name} returned empty list (possible rate limit)")
+                    continue
+                
+                for submission in submissions:
+                    # Filter out stickied posts
+                    if submission.stickied:
+                        continue
+                    
+                    # Only include posts with decent engagement (lower threshold than before)
+                    if submission.score < 25:
+                        continue
+                    
+                    all_posts.append({
+                        "subreddit": subreddit_name,
+                        "title": submission.title,
+                        "url": f"https://reddit.com{submission.permalink}",
+                        "score": submission.score,
+                        "selftext": submission.selftext[:500] if submission.selftext else "",
+                    })
+                
+                fetched_count = len([p for p in all_posts if p['subreddit'] == subreddit_name])
+                if fetched_count > 0:
+                    print(f"  ✓ Fetched {fetched_count} posts from r/{subreddit_name}")
+                else:
+                    print(f"  ⚠️  r/{subreddit_name}: No posts met criteria (25+ upvotes)")
+            
+            except Exception as e:
+                print(f"  ✗ Error fetching r/{subreddit_name}: {e}")
+                continue
+        
+        print(f"\nTotal Reddit posts found: {len(all_posts)}")
+        
+        if not all_posts:
+            print("  → Try again later if rate limited")
+            return None
+        
+        # Return a random high-scoring post
+        return random.choice(sorted(all_posts, key=lambda x: x["score"], reverse=True)[:20])
     
-    if not all_posts:
+    except Exception as e:
+        print(f"Reddit OAuth error: {e}")
         return None
-    
-    # Return a random high-scoring post
-    return random.choice(sorted(all_posts, key=lambda x: x["score"], reverse=True)[:20])
 
 
 def get_news_articles():
@@ -119,8 +159,14 @@ def get_news_articles():
     
     for source_name, rss_url in NEWS_FEEDS.items():
         try:
+            print(f"  Fetching from {source_name}...")
             feed = feedparser.parse(rss_url)
             
+            if not feed.entries:
+                print(f"  ⚠️  {source_name} has no entries")
+                continue
+            
+            relevant_count = 0
             for entry in feed.entries[:15]:  # Check last 15 articles
                 title = entry.title.lower()
                 summary = entry.get("summary", "").lower()
@@ -137,10 +183,15 @@ def get_news_articles():
                         "summary": entry.get("summary", "")[:300],
                         "published": entry.get("published", "Unknown date")
                     })
+                    relevant_count += 1
+            
+            print(f"  ✓ Found {relevant_count} relevant articles from {source_name}")
         
         except Exception as e:
-            print(f"Error fetching {source_name}: {e}")
+            print(f"  ✗ Error fetching {source_name}: {e}")
             continue
+    
+    print(f"\nTotal relevant articles: {len(all_articles)}")
     
     if not all_articles:
         return None
@@ -173,28 +224,58 @@ def clean_ai_response(text):
 
 
 def get_youtube_videos():
-    """Fetch recent videos from doom YouTube channels"""
-    all_videos = []
+    """Fetch recent videos from doom YouTube channels using YouTube Data API v3"""
+    try:
+        # Build YouTube API client using same key as Gemini
+        youtube = build('youtube', 'v3', developerKey=GEMINI_API_KEY)
+        
+        all_videos = []
+        
+        for channel_name, playlist_id in YOUTUBE_CHANNELS.items():
+            try:
+                print(f"  Fetching from {channel_name}...")
+                
+                # Get latest videos from uploads playlist (UU...)
+                request = youtube.playlistItems().list(
+                    part='snippet',
+                    playlistId=playlist_id,
+                    maxResults=5  # Get 5 most recent videos
+                )
+                response = request.execute()
+                
+                # Handle empty response
+                if not response.get('items'):
+                    print(f"  ⚠️  {channel_name} returned empty list")
+                    continue
+                
+                for item in response['items']:
+                    snippet = item['snippet']
+                    video_id = snippet['resourceId']['videoId']
+                    
+                    all_videos.append({
+                        "channel": channel_name,
+                        "title": snippet['title'],
+                        "url": f"https://www.youtube.com/watch?v={video_id}",
+                        "published": snippet['publishedAt']
+                    })
+                
+                print(f"  ✓ Got {len(response['items'])} videos from {channel_name}")
+            
+            except Exception as e:
+                print(f"  ✗ Error fetching from {channel_name}: {e}")
+                continue
+        
+        print(f"\nTotal videos found: {len(all_videos)}")
+        
+        if not all_videos:
+            return None
+        
+        return random.choice(all_videos)
     
-    for channel_name, rss_url in YOUTUBE_CHANNELS.items():
-        try:
-            feed = feedparser.parse(rss_url)
-            # Get the 5 most recent videos from each channel
-            for entry in feed.entries[:5]:
-                all_videos.append({
-                    "channel": channel_name,
-                    "title": entry.title,
-                    "url": entry.link,
-                    "published": entry.published if hasattr(entry, 'published') else "Unknown date"
-                })
-        except Exception as e:
-            print(f"Error fetching from {channel_name}: {e}")
-            continue
-    
-    if not all_videos:
+    except Exception as e:
+        print(f"YouTube API error: {e}")
+        print("  → Make sure YouTube Data API v3 is enabled in Google Cloud Console")
         return None
-    
-    return random.choice(all_videos)
 
 
 def generate_reddit_post(reddit_data):
@@ -400,7 +481,7 @@ def main():
     
     # Generate content based on selected type
     if content_type == "reddit":
-        print("\n🔴 Generating REDDIT POST...")
+        print("\n🔴 Generating REDDIT POST (OAuth)...")
         reddit_data = get_reddit_posts()
         
         if reddit_data:
@@ -422,7 +503,7 @@ def main():
             content_type = "original"
     
     elif content_type == "youtube":
-        print("\n📺 Generating YOUTUBE POST...")
+        print("\n📺 Generating YOUTUBE POST (Data API v3)...")
         video = get_youtube_videos()
         
         if video:
