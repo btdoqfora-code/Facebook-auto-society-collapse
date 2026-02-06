@@ -88,7 +88,7 @@ fb_exchange_token=YOUR_SHORT_LIVED_TOKEN
 2. Click **"Create API Key"**
 3. Copy the key (starts with `AIza...`)
 
-**Note:** Gemini 2.0 Flash has generous free tier (15 RPM, 1M requests/day)
+**Note:** Gemini 3 Flash Preview has generous free tier (15 RPM, 1M requests/day)
 
 ---
 
