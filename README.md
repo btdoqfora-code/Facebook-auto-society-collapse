@@ -46,7 +46,7 @@ Automated Facebook page posting doom content about economic collapse, AI takeove
 
 - **Python 3.11**
 - **GitHub Actions** (scheduling & hosting)
-- **Gemini 2.0 Flash** (AI content generation)
+- **Gemini 3 Flash Preview** (AI content generation)
 - **Facebook Graph API** (posting)
 - **YouTube RSS** (video aggregation)
 
@@ -162,4 +162,4 @@ MIT - Do whatever you want with it
 ## Credits
 
 Built with inspiration from successful Facebook automation patterns.
-Powered by Gemini 2.0 Flash and GitHub Actions.
+Powered by Gemini 3 Flash Preview and GitHub Actions.
