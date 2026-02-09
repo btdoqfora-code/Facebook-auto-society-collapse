@@ -4,8 +4,8 @@ Automated Facebook page posting doom content about economic collapse, AI takeove
 
 ## Features
 
-- **60% News Articles** - Economic/AI doom news from 10+ reliable RSS sources
-- **20% YouTube Videos** - Doom channel content using YouTube Data API v3 (real-time!)
+- **45% News Articles** - Economic/AI doom news from 10+ reliable RSS sources
+- **35% YouTube Videos** - Doom channel content using YouTube Data API v3 (real-time!)
 - **20% Original AI Content** - Gemini generates doom analysis
 - **Completely Free** - All APIs use free tiers ($0/month forever)
 - **Simple & Reliable** - No OAuth complexity, just works
