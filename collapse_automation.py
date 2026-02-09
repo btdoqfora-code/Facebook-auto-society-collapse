@@ -58,8 +58,8 @@ NEWS_FEEDS = {
 
 # Content mix probabilities (must sum to 1.0)
 CONTENT_MIX = {
-    "news": 0.60,        # 60% News articles (very reliable)
-    "youtube": 0.20,     # 20% YouTube videos (Data API v3 - reliable!)
+    "news": 0.45,        # 45% News articles (reliable RSS feeds)
+    "youtube": 0.35,     # 35% YouTube videos (Data API v3 - now enabled!)
     "original": 0.20,    # 20% Original AI posts (always works)
 }
 
@@ -326,16 +326,32 @@ def post_to_facebook(message):
     """Post text content to Facebook page"""
     url = f"https://graph.facebook.com/v24.0/{FB_PAGE_ID}/feed"
     
+    # Extract URL from message if present (for link previews)
+    link_url = None
+    lines = message.split('\n')
+    for line in lines:
+        if line.strip().startswith('http'):
+            link_url = line.strip()
+            # Remove the URL from message since we'll use it as 'link' parameter
+            message = message.replace(line, '').strip()
+            break
+    
     payload = {
         "message": message,
         "access_token": FB_ACCESS_TOKEN
     }
+    
+    # Add link parameter for previews
+    if link_url:
+        payload["link"] = link_url
     
     response = requests.post(url, data=payload)
     
     if response.status_code == 200:
         print(f"✅ Posted successfully!")
         print(f"Preview: {message[:100]}...")
+        if link_url:
+            print(f"Link: {link_url}")
         return True
     else:
         print(f"❌ Error posting to Facebook: {response.status_code}")
